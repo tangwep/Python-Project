@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-import database
+from data import database
 
 #Logging
 logging.basicConfig(

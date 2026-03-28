@@ -9,9 +9,9 @@ import yfinance as yf
 import pandas as pd
 import time
 import logging
-from data import database
+import database
 import pipeline
-import data.indicators as indicators
+import indicators
 import os
 
 # this is for setting path 

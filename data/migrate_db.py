@@ -4,7 +4,7 @@ Adds the ma200 column to the technical_indicators table if it doesn't exist
 """
 import sqlite3
 import logging
-from data import database
+import database
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

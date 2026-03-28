@@ -10,3 +10,10 @@
 2026-03-28 11:56:50,453 [INFO] [30/503] AMP: inserted 1 new rows + indicators.
 2026-03-28 11:56:51,114 [INFO] [31/503] AMT: inserted 1 new rows + indicators.
 2026-03-28 11:56:51,751 [INFO] [32/503] AMZN: inserted 1 new rows + indicators.
+2026-03-28 14:29:26,119 [INFO] Downloading S&P 500 Index (^GSPC) for today...
+2026-03-28 14:29:27,145 [INFO] Index: inserted 0 rows.
+2026-03-28 14:30:06,380 [INFO] [53/503] BAC: inserted 1 new rows + indicators.
+2026-03-28 14:30:10,834 [ERROR] $BF.B: possibly delisted; no price data found  (period=1d)
+2026-03-28 14:30:10,835 [WARNING] [59/503] BF.B: empty response, skipping.
+2026-03-28 14:30:18,842 [ERROR] $BRK.B: possibly delisted; no price data found  (period=1d) (Yahoo error = "No data found, symbol may be delisted")
+2026-03-28 14:30:18,843 [WARNING] [69/503] BRK.B: empty response, skipping.

@@ -16,7 +16,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score
 import joblib
 from data import database
-
 def get_training_data():
     """Combines prices and indicators to create a feature dataset with all MAs."""
     conn = database.get_conn()
