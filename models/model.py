@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score
 import joblib
 from data import database
+import os
 
 def get_training_data():
     """Combines prices and indicators to create a feature dataset with all MAs."""
@@ -155,9 +156,29 @@ def train_model():
     # Evaluate
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
+
+    # this is for setting path 
+    # 1. Define the path to the log folder (stepping out of 'data' into 'log_files')
+    new_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+
+    # 2. Create the folder if it doesn't exist
+    if not os.path.exists(new_dir):
+        os.makedirs(new_dir)
+
+    # 3. Define the full path for the log file
+    pkl_path = os.path.join(new_dir, "stock_model.pkl")
     
     # Save model
-    joblib.dump(model, 'stock_model.pkl')
+    # Save model, features, and accuracy as a dictionary
+    model_data = {
+        'model': model,
+        'features': features,  # This tells the predictor which columns to use
+        'accuracy': accuracy
+    }
+    
+    joblib.dump(model_data, pkl_path)
+    
+    print(f"\n✅ Model and features saved to {pkl_path}")
     print(f"\n✅ Model trained and saved as stock_model.pkl")
     print(f"📈 Test Accuracy: {accuracy:.4f}")
     print(f"\n📋 Classification Report:")

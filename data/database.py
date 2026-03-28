@@ -56,7 +56,7 @@ def init_db():
     """)
     conn.commit()
     conn.close()
-    logger.info("Database initialized with technical_indicators table.")
+    logger.info("Database initialized with 3 tables: companies, daily_prices, technical_indicators.")
 
 
 def clear_daily_prices():
@@ -168,6 +168,31 @@ def get_price_history(symbol):
     return df
 
 
+def get_last_n_prices(symbol, n=250):
+    """
+    Get the last N prices for a symbol from the database.
+    Returns a DataFrame with columns needed for indicator calculation.
+    """
+    conn = get_conn()
+    df = pd.read_sql_query(
+        "SELECT date, open, high, low, close, volume FROM daily_prices WHERE symbol=? ORDER BY date DESC LIMIT ? ",
+        conn, params=(symbol, n)
+    )
+    conn.close()
+    
+    if df.empty:
+        return df
+    
+    # Reverse to get chronological order
+    df = df.iloc[::-1].reset_index(drop=True)
+    # Rename columns to match indicator calculation expectations (Open, High, Low, Close, Volume)
+    df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.set_index('Date', inplace=True)
+    
+    return df
+
+
 def get_db_stats():
     conn = get_conn()
     cur = conn.cursor()
@@ -178,9 +203,39 @@ def get_db_stats():
     conn.close()
     return {"companies": companies, "daily_prices": prices}
 
+def get_last_n_indicators(symbol, n=1):
+    """
+    Retrieves the most recent N indicator rows for a specific symbol.
+    Used by daily_model_update.py to feed the latest data into the model.
+    Returns DataFrame with columns: MA20, MA50, MA100, MA200, RSI14
+    """
+    conn = get_conn()
+    query = """
+        SELECT date, ma20, ma50, ma100, ma200, rsi14 
+        FROM technical_indicators 
+        WHERE symbol = ? 
+        ORDER BY date DESC LIMIT ?
+    """
+    df = pd.read_sql_query(query, conn, params=(symbol, n))
+    conn.close()
+    
+    if df.empty:
+        return df
+    
+    # Ensure proper data types for model prediction
+    for col in ['ma20', 'ma50', 'ma100', 'ma200', 'rsi14']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Standardize column names to uppercase for consistency with model.py
+    df.columns = ['date', 'MA20', 'MA50', 'MA100', 'MA200', 'RSI14']
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # Sort by date (chronological) and return
+    return df.sort_values('date').reset_index(drop=True)
+
 
 if __name__ == "__main__":
     init_db()
-    print("✅ Database initialized. Tables created.")
+    print("[OK] Database initialized. Tables created.")
     print("Stats:", get_db_stats())
 

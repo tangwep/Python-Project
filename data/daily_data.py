@@ -1,135 +1,96 @@
 """
 daily_data.py
-Script to be run daily by a task scheduler (e.g., cron or Windows Task Scheduler).
-It fetches just 1 day of historical data for the S&P 500 Index and all tracked companies,
-passes the data through pipeline.py to clean it (e.g., removing nan and 0 volume), 
-and safely appends it to stock_data.db.
+Strictly fetches 1-day of data and uses local DB for indicator calculations.
 """
 import yfinance as yf
 import pandas as pd
 import time
 import logging
-from data import database
-import pipeline
-import data.indicators as indicators
 import os
+import sys
+from pathlib import Path
 
-# this is for setting path 
-# 1. Define the path to the log folder (stepping out of 'data' into 'log_files')
+# Add parent directory to path to allow imports when run as script
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# --- Imports with fallback for both module and script execution ---
+try:
+    # Try relative imports (when imported as module)
+    from . import database
+    from . import indicators
+except ImportError:
+    # Fall back to direct imports (when run as script)
+    import database
+    import indicators
+
+import pipeline 
+
+# ─── Path Setup ──────────────────────────────────────────────────
 log_dir = os.path.join(os.path.dirname(__file__), '..', 'log_files')
-
-# 2. Create the folder if it doesn't exist
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# 3. Define the full path for the log file
 log_path = os.path.join(log_dir, "daily_sync.log")
 
-# ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(log_path, encoding="utf-8"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler(log_path, encoding="utf-8"), logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-PERIOD = "1d"  # Only the last 1 day of trading
-DELAY = 0.4    # Pause between API requests
+# --- CONFIGURATION ---
+PERIOD = "1d"  # Strictly 1 day from Yahoo Finance
+LOOKBACK_REQUIRED = 250 # Days needed from LOCAL DB for MA200/RSI
+DELAY = 0.5
 
-def download_index():
-    """Download S&P 500 index (^GSPC) 1-day prices."""
-    logger.info("Downloading S&P 500 Index (^GSPC) for today...")
+def sync_symbol(symbol):
     try:
-        hist = yf.Ticker("^GSPC").history(period=PERIOD)
+        # 1. Download ONLY 1 day from the internet
+        hist = yf.Ticker(symbol).history(period=PERIOD)
         if hist.empty:
-            logger.warning("Index data is empty!")
-            return
-            
-        hist = pipeline.clean_price_data(hist, "^GSPC")
-        rows = database.insert_daily_prices("^GSPC", hist)
-        logger.info(f"Index: inserted {rows} rows.")
+            return False
+
+        # 2. Clean and Insert Price
+        cleaned_today = pipeline.clean_price_data(hist, symbol)
+        if cleaned_today.empty:
+            return False
+        
+        database.insert_daily_prices(symbol, cleaned_today)
+
+        # 3. Fetch LOOKBACK from LOCAL DATABASE (No internet used here)
+        # We need previous data to calculate moving averages for today
+        local_history = database.get_last_n_prices(symbol, LOOKBACK_REQUIRED)
+        
+        if len(local_history) < 200:
+            logger.warning(f"{symbol}: Not enough local history for MA200.")
+            return True # Price was saved, but indicators can't be calculated yet
+
+        # 4. Calculate Indicators locally
+        indicators_df = indicators.calculate_indicators(local_history)
+        
+        # 5. Insert only the latest indicator row
+        latest_indicators = indicators_df.tail(1)
+        database.insert_indicators(symbol, latest_indicators)
+
+        return True
+
     except Exception as e:
-        logger.error(f"Failed to download index: {e}")
-
-def update_all_stocks(symbols):
-    """Loop through every symbol and pull the latest day."""
-    total = len(symbols)
-    success = 0
-    failed = []
-
-    for i, symbol in enumerate(symbols, 1):
-        try:
-            hist = yf.Ticker(symbol).history(period=PERIOD)
-
-            if hist.empty:
-                logger.warning(f"[{i}/{total}] {symbol}: empty response, skipping.")
-                failed.append(symbol)
-                continue
-
-            # Pass raw data through the cleaning pipeline
-            cleaned_hist = pipeline.clean_price_data(hist, symbol)
-            
-            # If the pipeline threw out everything (e.g. today was a holiday with 0 volume)
-            if cleaned_hist.empty:
-                logger.debug(f"[{i}/{total}] {symbol}: dropped by pipeline (0 volume/NaNs).")
-                continue
-
-            # Insert daily prices
-            rows = database.insert_daily_prices(symbol, cleaned_hist)
-
-            # Calculate and store indicators
-            # NOTE: We need enough history for moving averages, so we might pull
-            # more than just 1d when calculating indicators.
-            # For now, let's pull 150 days to ensure enough data for MA100
-            full_hist = yf.Ticker(symbol).history(period="150d")
-            cleaned_full = pipeline.clean_price_data(full_hist, symbol)
-
-            indicators_df = indicators.calculate_indicators(cleaned_full)
-            # Only insert the latest record
-            latest_indicators = indicators_df.tail(1)
-            database.insert_indicators(symbol, latest_indicators)
-
-            if rows > 0:
-                logger.info(f"[{i}/{total}] {symbol}: inserted {rows} new rows + indicators.")
-            success += 1
-
-        except Exception as e:
-            logger.error(f"[{i}/{total}] {symbol}: FAILED — {e}")
-            failed.append(symbol)
-
-        time.sleep(DELAY)
-
-    return success, failed
-
+        logger.error(f"{symbol}: Error — {e}")
+        return False
 
 def main():
-    print("=" * 60)
-    print("       S&P 500 Daily Data Sync Endpoint       ")
-    print("=" * 60)
-
-    # Note: We DO NOT clear the database. This script simply appends data today.
+    logger.info("Starting 1-Day Incremental Sync...")
     
-    # 1. Download index
-    download_index()
+    # Sync Index
+    sync_symbol("^GSPC")
 
-    # 2. Extract Stock Targets from Database
+    # Sync Stocks
     symbols = database.get_all_symbols()
-    print(f"\n📥 Syncing latest day pricing for {len(symbols)} stocks...")
-    
-    # 3. Download & Clean & Database insert
-    success, failed = update_all_stocks(symbols)
-
-    print("\n" + "=" * 60)
-    print("  Daily Sync Complete!")
-    print(f"  ✅ Stocks updated    : {success}/{len(symbols)}")
-    if failed:
-        print(f"  ❌ Failed (or Empty) : {len(failed)}")
-    print("=" * 60)
-
+    for i, symbol in enumerate(symbols, 1):
+        if sync_symbol(symbol):
+            logger.info(f"[{i}/{len(symbols)}] {symbol}: Updated.")
+        time.sleep(DELAY)
 
 if __name__ == "__main__":
     main()
-

@@ -300,7 +300,19 @@ def get_all_companies_for_search():
 def get_model_prediction(price, ma20, ma50, ma100, ma200, rsi, volume, volume_ma):
     """Get 5-level prediction from trained model"""
     try:
-        model = joblib.load('models/stock_model.pkl')
+        # Use absolute path based on script location
+        import os
+        from pathlib import Path
+        script_dir = Path(__file__).parent
+        model_path = script_dir / "models" / "stock_model.pkl"
+        
+        if not model_path.exists():
+            logger.error(f"Model file not found at: {model_path}")
+            return "Model Not Found", "signal-hold", "signal-hold", "N/A", "N/A", False
+        
+        # Load model - it returns a dict with 'model', 'features', 'accuracy'
+        model_data = joblib.load(str(model_path))
+        model = model_data['model']  # Extract the actual model
         
         # Prepare features as used in model training
         dist_ma20 = (price - ma20) / ma20 if ma20 != 0 else 0
@@ -319,20 +331,22 @@ def get_model_prediction(price, ma20, ma50, ma100, ma200, rsi, volume, volume_ma
         
         # Map prediction to signal
         signal_map = {
-            -2: ("🔴 STRONG SELL", "sentiment-strong-sell", "signal-strong-sell", "Strong Sell"),
-            -1: ("🔶 WEAK SELL", "sentiment-weak-sell", "signal-weak-sell", "Weak Sell"),
-            0: ("🟡 HOLD", "sentiment-hold", "signal-hold", "Hold"),
-            1: ("🟢 WEAK BUY", "sentiment-weak-buy", "signal-weak-buy", "Weak Buy"),
-            2: ("🟢 STRONG BUY", "sentiment-strong-buy", "signal-strong-buy", "Strong Buy")
+            -2: ("STRONG SELL", "sentiment-strong-sell", "signal-strong-sell", "Strong Sell"),
+            -1: ("WEAK SELL", "sentiment-weak-sell", "signal-weak-sell", "Weak Sell"),
+            0: ("HOLD", "sentiment-hold", "signal-hold", "Hold"),
+            1: ("WEAK BUY", "sentiment-weak-buy", "signal-weak-buy", "Weak Buy"),
+            2: ("STRONG BUY", "sentiment-strong-buy", "signal-strong-buy", "Strong Buy")
         }
         
-        emoji_signal, sentiment_class, badge_class, signal_text = signal_map.get(prediction, ("⚠️ UNKNOWN", "signal-hold", "signal-hold", "Hold"))
+        emoji_signal, sentiment_class, badge_class, signal_text = signal_map.get(prediction, ("UNKNOWN", "signal-hold", "signal-hold", "Hold"))
         confidence = f"{max_prob*100:.1f}%"
         
         return emoji_signal, sentiment_class, badge_class, signal_text, confidence, True
     except Exception as e:
         logger.error(f"Model prediction failed: {e}")
-        return "⚠️ Model Not Loaded", "signal-hold", "signal-hold", "N/A", "N/A", False
+        import traceback
+        traceback.print_exc()
+        return "Model Error", "signal-hold", "signal-hold", "N/A", "N/A", False
 
 # ==================== SIDEBAR ====================
 st.sidebar.title("⚙️ Dashboard Settings")

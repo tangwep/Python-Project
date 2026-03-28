@@ -13,8 +13,9 @@ import time
 import logging
 import database
 import pipeline
-import data.indicators as indicators
+import indicators
 import os
+from company_names import fetch_sp500_list
 
 # this is for setting path 
 # 1. Define the path to the log folder (stepping out of 'data' into 'log_files')
@@ -105,14 +106,25 @@ def main():
     # Step 1: Initialize DB (just in case)
     database.init_db()
 
+    # Step 1.5: Fetch and store S&P 500 company list
+    print("\n[COMPANIES] Fetching S&P 500 company list from Wikipedia...")
+    try:
+        sp500_df = fetch_sp500_list()
+        inserted = database.insert_companies(sp500_df)
+        print(f"[OK] {inserted} companies stored in database.")
+    except Exception as e:
+        logger.error(f"Failed to fetch company list: {e}")
+        print(f"[ERROR] Could not fetch companies: {e}")
+        return
+
     # Step 2: Download index data
-    print("\n📈 Downloading S&P 500 Index data...")
+    print("\n[INDEX] Downloading S&P 500 Index data...")
     download_index()
 
     # Step 3: Download individual stocks
     symbols = database.get_all_symbols()
-    print(f"\n📥 Downloading price history for {len(symbols)} stocks...")
-    print("   (This will take ~5-6 minutes. Progress logged below)\n")
+    print(f"\n[DOWNLOAD] Downloading price history for {len(symbols)} stocks...")
+    print("   (This will take ~10-15 minutes for full S&P 500. Progress logged below)\n")
 
     success, failed = download_all_stocks(symbols)
 
@@ -120,9 +132,9 @@ def main():
     stats = database.get_db_stats()
     print("\n" + "=" * 60)
     print("  Download Complete!")
-    print(f"  ✅ Stocks downloaded : {success}/{len(symbols)}")
-    print(f"  ❌ Failed            : {len(failed)} {failed if failed else ''}")
-    print(f"  📦 Total price rows  : {stats['daily_prices']:,}")
+    print(f"  [OK] Stocks downloaded : {success}/{len(symbols)}")
+    print(f"  [FAILED] Failed            : {len(failed)} {failed if failed else ''}")
+    print(f"  [TOTAL] Total price rows  : {stats['daily_prices']:,}")
     print("=" * 60)
 
 

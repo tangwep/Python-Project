@@ -1,35 +1,63 @@
+"""
+pipeline.py
+Data cleaning and preprocessing pipeline for stock price data.
+"""
 import pandas as pd
 import logging
 
 logger = logging.getLogger(__name__)
 
-def clean_price_data(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+
+def clean_price_data(hist_df, symbol):
     """
-    Cleans raw yfinance historical data before saving to the database.
+    Clean price data from yfinance.
     
-    Rules enforced:
-    1. Removes any rows containing NaN (blank) values.
-    2. Removes any rows where the trading Volume was 0 (market holiday/halt).
+    Args:
+        hist_df: DataFrame from yfinance with OHLCV data
+        symbol: Stock ticker symbol
+    
+    Returns:
+        Cleaned DataFrame ready for database insertion
     """
-    if df.empty:
+    if hist_df.empty:
+        logger.warning(f"{symbol}: Empty price history received.")
+        return pd.DataFrame()
+    
+    try:
+        df = hist_df.copy()
+        
+        # Ensure required columns exist
+        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in required_cols:
+            if col not in df.columns:
+                logger.error(f"{symbol}: Missing required column '{col}'")
+                return pd.DataFrame()
+        
+        # Handle missing values
+        df = df.dropna(subset=['Close'])
+        
+        # Ensure data types
+        for col in required_cols:
+            if col != 'Volume':
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            else:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+        # Remove rows with NaN in price columns
+        df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+        
+        # Ensure dates are in correct format
+        if df.index.name == 'Date' or not df.index.name:
+            df['Date'] = df.index
+        
+        # Reset index to make Date a column
+        if 'Date' not in df.columns:
+            df.reset_index(inplace=True)
+            df.rename(columns={'index': 'Date'}, inplace=True)
+        
+        logger.debug(f"{symbol}: Cleaned {len(df)} price records.")
         return df
-
-    original_len = len(df)
-
-    # Rule 1: Drop rows with NaN (missing data)
-    df = df.dropna()
-
-    # Rule 2: Drop days where Volume is 0 (except for the index, since sometimes index volume isn't tracked perfectly)
-    if symbol != "^GSPC" and "Volume" in df.columns:
-        df = df[df["Volume"] > 0]
-
-    # Rule 3: Ensure data types and round to 4 decimals just in case
-    for col in ["Open", "High", "Low", "Close"]:
-        if col in df.columns:
-            df[col] = df[col].astype(float).round(4)
-
-    new_len = len(df)
-    if new_len < original_len:
-        logger.debug(f"{symbol}: Pipeline removed {original_len - new_len} invalid rows (NaNs or 0 Volume).")
-
-    return df
+        
+    except Exception as e:
+        logger.error(f"{symbol}: Error cleaning price data — {e}")
+        return pd.DataFrame()
